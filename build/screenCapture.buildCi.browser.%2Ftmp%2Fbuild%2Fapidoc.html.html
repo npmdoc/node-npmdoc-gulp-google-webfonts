@@ -1,0 +1,246 @@
+<html><head></head><body><div class="apidocDiv">
+<style>
+/*csslint
+*/
+.apidocDiv {
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.apidocDiv a[href] {
+    color: #33f;
+    font-weight: bold;
+    text-decoration: none;
+}
+.apidocDiv a[href]:hover {
+    text-decoration: underline;
+}
+.apidocCodeCommentSpan {
+    background: #bbf;
+    color: #000;
+    display: block;
+}
+.apidocCodeKeywordSpan {
+    color: #d00;
+    font-weight: bold;
+}
+.apidocCodePre {
+    background: #eef;
+    border: 1px solid;
+    color: #777;
+    padding: 5px;
+    white-space: pre-wrap;
+}
+.apidocFooterDiv {
+    margin-top: 20px;
+    text-align: center;
+}
+.apidocModuleLi {
+    margin-top: 10px;
+}
+.apidocSectionDiv {
+    border-top: 1px solid;
+    margin-top: 20px;
+}
+.apidocSignatureSpan {
+    color: #777;
+    font-weight: bold;
+}
+</style>
+<h1>api documentation for
+    <a href="https://github.com/battlesnake/gulp-google-webfonts">gulp-google-webfonts (v0.0.14)</a>
+</h1>
+<h4>A gulp plugin to download Google webfonts and generate a stylesheet for them.</h4>
+<div class="apidocSectionDiv"><a href="#apidoc.tableOfContents" id="apidoc.tableOfContents"><h1>table of contents</h1></a><ol>
+
+    <li class="apidocModuleLi"><a href="#apidoc.module.gulp-google-webfonts">module gulp-google-webfonts</a><ol>
+
+        <li>
+
+            <a class="apidocElementLiA" href="#apidoc.element.gulp-google-webfonts.gulp-google-webfonts">
+            function <span class="apidocSignatureSpan"></span>gulp-google-webfonts
+            <span class="apidocSignatureSpan">(options)</span>
+            </a>
+
+        </li>
+
+    </ol></li>
+
+</ol></div>
+
+<div class="apidocSectionDiv">
+<h1><a href="#apidoc.module.gulp-google-webfonts" id="apidoc.module.gulp-google-webfonts">module gulp-google-webfonts</a></h1>
+
+
+    <h2>
+        <a href="#apidoc.element.gulp-google-webfonts.gulp-google-webfonts" id="apidoc.element.gulp-google-webfonts.gulp-google-webfonts">
+        function <span class="apidocSignatureSpan"></span>gulp-google-webfonts
+        <span class="apidocSignatureSpan">(options)</span>
+        </a>
+    </h2>
+    <ul>
+    <li>description and source-code<pre class="apidocCodePre">function getter(options) {
+	options = _.defaults({}, options, defaultOptions);
+	if (isGulp) {
+		if (options.outBaseDir) {
+			throw new Error('outBaseDir only valid when run from command line, use gulp.dest instead');
+		}
+	}
+	return isGulp ? through.obj(processor) : processor;
+
+	function processor(file, enc, next) {
+		var self = this;
+		function writeFile(filename, contents, next) {
+			if (options.outBaseDir) {
+				filename = path.join(options.outBaseDir, filename);
+			}
+			verbose('Writing ' + contents.length + ' bytes to "' + filename + '"');
+			if (isGulp) {
+				writeFileToGulpStream(filename, contents, next);
+			} else {
+				writeFileToDisk(filename, contents, next);
+			}
+			return;
+
+			function writeFileToGulpStream(filename, contents, next) {
+				self.push(new File({
+					path: filename,
+					contents: contents
+				}));
+				next(null, null);
+			}
+
+			function writeFileToDisk(filename, contents, next) {
+				async.series([
+					async.apply(mkdirp, path.dirname(filename)),
+					async.apply(fs.writeFile, filename, contents, null)
+				], next);
+			}
+		}
+		var data;
+		if (isGulp) {
+			if (file.isNull()) {
+				return self.emit('data', file);
+			}
+			if (file.isStream()) {
+				return self.emit('error', new Error('webfont-getter: Streaming not supported'));
+			}
+			data = file.contents.toString(enc);
+		} else {
+			data = file;
+		}
+		var subsets = [];
+		var param = data
+			.split('\n')
+			.map(function (s) { return s.trim(); })
+			.filter(function (s) { return s.length &gt; 0 &amp;&amp; s.charAt(0) !== '#'; })
+			.map(parseLine)
+			.join('|')
+			.replace(/^\|*|\|*$/g, '');
+		async.waterfall([initial(param), requestCss, receiveCss, parseCss, downloadFonts], next);
+
+		function parseLine(line) {
+			if (line.indexOf('\t') === -1) {
+				<span class="apidocCodeCommentSpan">/* Extract subsets if specified */
+</span>				var ss = line.match(/&amp;subset=.*$/);
+				if (ss) {
+					line = line.substr(0, ss.index);
+					addSubsets(ss[0].substr(8).split(','));
+				}
+				return line.replace(/ /g, '+');
+			} else {
+				return parseTabDelimetedLine(line);
+			}
+		}
+
+		function parseTabDelimetedLine(line) {
+			var fields = line.split('\t');
+			var face = fields[0].replace(/ /g, '+');
+			var style = fields[1] || '400';
+			var subset = fields[2];
+			if (subset) {
+				addSubsets(subset.split(','));
+			}
+			return face + ':' + style;
+		}
+
+		function addSubsets(s) {
+			if (!s || !s.length) {
+				return;
+			}
+			s.forEach(function (subset) {
+				if (subsets.indexOf(subset) === -1) {
+					subsets.push(subset);
+				}
+			});
+		}
+
+		function initial(value) {
+			return function (next) { return next(null, value); };
+		}
+
+		function requestCss(param, next) {
+			if (subsets.length) {
+				param = param + '&amp;subset=' + subsets.join(',');
+			}
+			var req = {
+				host: options.host,
+				path: '/' + options.hostPath + '?family=' + param,
+				headers: {
+					'User-Agent': formatData[options.format].agent
+				}
+			};
+			verbose('GET ' + req.host + req.path);
+			http
+				.get(req, async.apply(next, null))
+				.on('error', next);
+		}
+
+		function receiveCss(res, next) {
+			var css = [];
+			verbose('HTTP ' + res.statusCode);
+			res.on('data', function (data) { css.push(data.toString()); });
+			res.on('error', next);
+			res.on('end', function () { next(null, css.join('')); });
+		}
+
+		function parseCss(css, next) {
+			var ext = formatData[options.format].extension;
+			if (css.substr(0, 2) === '&lt;!') {
+				return next(new Error('Failed to retrieve webfont CSS'));
+			}
+			var fontFaces = extractFontFaceBlocks(css);
+			var classes = extractClasses(css);
+			var requests = [];
+			for (var i=0; i&lt;fontFaces.length; i++) {
+				requests.push(extractData(fontFaces[i], ext));
+			}
+
+			generateFontCss(requests, classes, next);
+
+
+			function extractData(block, ext) {
+				var re = new RegExp([
+					"\\s*font-family:\\s*'([^']+)';",
+					"\\s*font-style:\\s*(\\w+);",
+					"\\s*font-weight:\\s*(\\w+);",
+					"\\s*src:[^;]*url\\(([^)]+\\." + ext + ")\\)[^;]*;",
+					".*(?:unicode-range:([^;]+);)?",
+				].join(''), 'm');
+
+				return formatData.apply(null, block.match(re, 'm'));
+
+
+				function formatData(block, family, style, weight, url, range) { ...</pre></li>
+    <li>example usage<pre class="apidocCodePre">n/a</pre></li>
+    </ul>
+
+
+</div>
+
+<div class="apidocFooterDiv">
+    [ this document was created with
+    <a href="https://github.com/kaizhu256/node-utility2" target="_blank">utility2</a>
+    ]
+</div>
+</div>
+</body></html>
